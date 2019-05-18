@@ -8,9 +8,17 @@
 (def ship-size 30)
 (def center [(/ width 2) (/ height 2)])
 (def speed 1)
+(def bradius 5)
+(def rate 0.03)
 (def initial-state
   {::position center
-   ::velocity [0 0]})
+   ::velocity [0 0]
+   ::bullets []})
+
+(defn clamp [llim x rlim]
+  (-> x
+      (max llim)
+      (min rlim)))
 
 (defn normalize [v]
   (let [norm (apply Math/hypot v)]
@@ -29,12 +37,31 @@
 
 (defn move-ship [{velocity ::velocity :as state}]
   (update state ::position 
-          #(map + velocity %)))
+          #(map (fn [x y] (clamp 0 x y))
+                (map + velocity %)
+                [width height])))
 
+(defn move-bullet [{position ::position velocity ::velocity :as state}]
+  (assoc state ::position
+         (map + position velocity)))
+
+(defn move-bullets [state]
+  (update state ::bullets
+          #(map move-bullet %)))
+
+(defn produce-bullets [state]
+  (cond-> state
+    (< (rand) rate)
+    (update ::bullets #(cons {::position [(rand width) (- (* 2 bradius))]
+                              ::velocity [0 2]}
+                             %))))
+          
 (defn next-frame [state]
   (-> state
       move-ship
-      update-velocity))
+      update-velocity
+      move-bullets
+      produce-bullets))
 
 (defn mouse-of [mouse-event]
   [(.-pageX mouse-event) (.-pageY mouse-event)])
@@ -62,7 +89,11 @@
                    (/ ship-size 2))
              :href "images/spaceship.svg"
              :width ship-size
-             :height ship-size}]]])
+             :height ship-size}]
+    (for [{[x y] ::position} (::bullets (rum/react state))]
+      [:circle {:cx x
+                :cy y
+                :r bradius}])]])
 
 (def game-state
   (atom initial-state))
