@@ -6,6 +6,7 @@
 (def width 300)
 (def height 600)
 (def ship-size 30)
+(def sradius (/ ship-size 2))
 (def center [(/ width 2) (/ height 2)])
 (def speed 1)
 (def bradius 5)
@@ -13,7 +14,8 @@
 (def initial-state
   {::position center
    ::velocity [0 0]
-   ::bullets []})
+   ::bullets []
+   ::game-over false})
 
 (defn clamp [llim x rlim]
   (-> x
@@ -55,13 +57,36 @@
     (update ::bullets #(cons {::position [(rand width) (- (* 2 bradius))]
                               ::velocity [0 2]}
                              %))))
-          
+
+(defn in-screen? [{[x y] ::position}]
+  (let [bsize (* 2 bradius)]
+    (and
+      (<= (- bsize) x (+ width bsize))
+      (<= (- bsize) y (+ height bsize)))))
+
+(defn erase-bullets [state]
+  (update state ::bullets
+          #(filter in-screen? %)))
+
+(defn collide? [[x y] {[bx by] ::position}]
+  (<= (Math/hypot (- x bx) (- y by))
+      (+ bradius sradius)))
+
+(defn game-over? [{position ::position bullets ::bullets}]
+  (some #(collide? position %) bullets))
+
+(defn check-game-over [state]
+  (cond-> state
+    (game-over? state) (assoc ::game-over true)))
+
 (defn next-frame [state]
   (-> state
       move-ship
       update-velocity
+      produce-bullets
       move-bullets
-      produce-bullets))
+      erase-bullets
+      check-game-over))
 
 (defn mouse-of [mouse-event]
   [(.-pageX mouse-event) (.-pageY mouse-event)])
@@ -75,7 +100,15 @@
           :on-mouse-down #(swap! state assoc ::mouse (mouse-of %))
           :on-mouse-move #(when (::mouse @state)
                             (swap! state assoc ::mouse (mouse-of %)))
-          :on-mouse-up #(swap! state dissoc ::mouse)}
+          :on-mouse-up #(swap! state dissoc ::mouse)
+          :on-touch-start #(swap! state assoc ::mouse
+                                  (mouse-of
+                                    (aget (.-changedTouches %) 0)))
+          :on-touch-move #(when (::mouse @state)
+                            (swap! state assoc ::mouse
+                                   (mouse-of
+                                     (aget (.-changedTouches %) 0))))
+          :on-touch-end #(swap! state dissoc ::mouse)}
     [:rect {:x 0
             :y 0
             :width width
@@ -83,17 +116,26 @@
             :stroke "black"
             :fill "white"
             :stroke-width 2}]
-    [:image {:x (- (first (::position (rum/react state)))
-                   (/ ship-size 2))
-             :y (- (second (::position (rum/react state)))
-                   (/ ship-size 2))
-             :href "images/spaceship.svg"
-             :width ship-size
-             :height ship-size}]
+    (when-not (::game-over (rum/react state))
+      [:image {:x (- (first (::position (rum/react state)))
+                     (/ ship-size 2))
+               :y (- (second (::position (rum/react state)))
+                     (/ ship-size 2))
+               :href "images/spaceship.svg"
+               :width ship-size
+               :height ship-size}])
     (for [{[x y] ::position} (::bullets (rum/react state))]
       [:circle {:cx x
                 :cy y
-                :r bradius}])]])
+                :r bradius}])
+    (when (::game-over (rum/react state))
+      [:text {:x (first center)
+              :y (second center)
+              :fill "red"
+              :font-weight "bold"
+              :font-size 30
+              :text-anchor "middle"}
+       "Game Over"])]])
 
 (def game-state
   (atom initial-state))
